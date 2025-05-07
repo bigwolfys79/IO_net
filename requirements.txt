@@ -1,0 +1,9 @@
+cryptography==44.0.3
+Flask==3.1.0
+Pillow==11.2.1
+Pygments==2.19.1
+PyQt6==6.9.0
+PyQt6_sip==13.10.0
+python-dotenv==1.1.0
+Requests==2.32.3
+Werkzeug==3.1.3
