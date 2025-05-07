@@ -1,0 +1,8 @@
+.vscode
+__pycache__
+encrypted_api_key.bin
+encryption_key.bin
+*.log
+*.json
+
+
