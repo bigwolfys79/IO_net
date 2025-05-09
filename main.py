@@ -238,10 +238,12 @@ class Application(QMainWindow):
         QTimer.singleShot(0, self.process_pending_messages)
 
     def process_pending_messages(self):
-        """Обрабатывает отложенные сообщения."""
+        logging.debug(f"Обработка {len(self.pending_messages)} отложенных сообщений")
         for content, is_user, timestamp, image_path, image_url in self.pending_messages:
+            logging.debug(f"Добавление отложенного сообщения: '{content}'")
             self.add_message_to_chat(content, is_user, timestamp, image_path, image_url)
         self.pending_messages.clear()
+        logging.debug("pending_messages очищен")
         if self.chat_history:
             self.status_label.setText(f"Загружено {len(self.chat_history)} сообщений")
 
@@ -257,7 +259,8 @@ class Application(QMainWindow):
         self.signals.add_message.connect(self.add_message_to_chat)
         self.signals.update_status.connect(self.status_label.setText)
         self.signals.error.connect(self.handle_error_signal)
-        self.signals.clear_prompt.connect(self.prompt_text.clear)
+        # self.signals.clear_prompt.connect(self.prompt_text.clear)
+        # self.signals.clear_prompt.connect(lambda: logging.debug("Очистка prompt_text") or self.prompt_text.clear())
 
     def handle_error_signal(self, error_msg):
         """Обрабатывает сигнал ошибки."""
@@ -388,6 +391,7 @@ class Application(QMainWindow):
 
     def add_message_to_chat(self, message, is_user=True, timestamp=None, image_path=None, image_url=None):
         """Добавляет сообщение в чат."""
+        logging.debug(f"Добавление сообщения в чат: '{message}'")
         msg = ChatMessage(
             self.messages_widget,
             message,
@@ -563,6 +567,17 @@ class Application(QMainWindow):
 
     def send_request(self):
         """Отправляет запрос к AI-модели в фоновом потоке."""
+        # Проверяем, есть ли текст, изображение или файл
+        prompt = self.prompt_text.toPlainText().strip()
+        image_url = self.image_url_edit.text().strip()
+        file_content = self.read_file()
+        has_image = bool(image_url or self.image_base64)
+
+        if not prompt and not has_image and not file_content:
+            self.status_label.setText("Введите сообщение, выберите изображение или файл")
+            app_logger.debug("Попытка отправки пустого запроса")
+            return  # Прерываем выполнение, не создавая Worker
+
         worker = Worker(self._send_request_task)
         worker.signals.finished.connect(self._update_ui_after_response)
         worker.signals.error.connect(self.signals.error.emit)
@@ -577,11 +592,19 @@ class Application(QMainWindow):
         model_id = selected_model.replace("[Чат]", "").replace("[Эмбеддинг]", "").strip()
         model_type = self._get_model_type(model_id)
         if model_type == "embedding":
-            prompt = self.prompt_text.toPlainText().strip()
-            if not prompt:
+            prompt = self.prompt_text.toPlainText()
+            logging.debug(f"Текст для эмбеддинга перед strip: '{prompt}'")
+            if not prompt.strip():
                 raise ValueError("Введите текст для эмбеддинга")
-            return _handle_embedding_task(model_id, prompt, self.api_settings, self.api_key)
-        prompt = self.prompt_text.toPlainText().strip()
+            # Очищаем поле ввода после извлечения текста
+            QTimer.singleShot(0, self.prompt_text.clear)
+            return self._handle_embedding_task(model_id, prompt)
+        prompt = self.prompt_text.toPlainText()
+        logging.debug(f"Текст запроса перед обработкой: '{prompt}'")
+        # Очищаем поле ввода после извлечения текста
+        QTimer.singleShot(0, self.prompt_text.clear)
+        prompt = prompt.rstrip()  # Удаляем только конечные пробелы и переносы
+        logging.debug(f"Текст запроса после обработки: '{prompt}'")
         image_url = self.image_url_edit.text().strip()
         has_image = False
         image_paths = self.image_path if isinstance(self.image_path, list) else [self.image_path] if self.image_path else []
@@ -602,7 +625,7 @@ class Application(QMainWindow):
             for img_b64 in image_base64s:
                 image_urls.append(f"data:image/jpeg;base64,{img_b64}")
                 has_image = True
-                app_logger.debug(f"Добавлено изображение в формате base64")
+                logging.debug(f"Добавлено изображение в формате base64")
         if len(image_urls) > 10:
             raise ValueError("Максимум 10 изображений за запрос")
         file_content = self.read_file()
@@ -613,8 +636,6 @@ class Application(QMainWindow):
             file_type = {"py": "python", "txt": "text", "json": "json"}.get(ext)
             if not file_type:
                 raise ValueError("Неподдерживаемый тип файла")
-        if not prompt and not has_image and not file_content:
-            raise ValueError("Введите сообщение, выберите изображение или файл")
         if not prompt and has_image and model_type != "vision":
             raise ValueError("Выбранная модель не поддерживает работу только с изображениями")
         if not prompt and has_image:
@@ -629,9 +650,11 @@ class Application(QMainWindow):
         if file_content:
             message_content += f"\n``` {file_type}\n{file_content}\n```"
             content[0]["text"] += f"\n\nСодержимое файла ({file_type}):\n```\n{file_content}\n```"
+        
+        logging.debug(f"Добавлено в pending_messages: '{message_content}'")
         self.pending_messages.append((message_content, True, timestamp, image_paths[0] if image_paths else None, image_url or None))
         QTimer.singleShot(0, self.process_pending_messages)
-        self.signals.clear_prompt.emit()
+
         messages = [
             {
                 "role": "system",
@@ -645,14 +668,14 @@ class Application(QMainWindow):
             })
         messages.append({
             "role": "user",
-            "method": content
+            "content": content
         })
         self._add_to_history(
             "user",
             message_content,
             image_urls[0] if image_urls else file_path
         )
-        response = self.create_completion(model_id, messages)
+        response = self.create_completion(model_id, messages)        
         return response
 
     def _update_ui_after_response(self, response):
@@ -666,7 +689,6 @@ class Application(QMainWindow):
             self._add_to_history("assistant", content)
             self.signals.add_message.emit(content, False, timestamp, None, None)
             self.signals.update_status.emit("Ответ получен")
-            # self.prompt_text.clear()
             if self.uploaded_image_ids and self.local_server:
                 all_deleted = True
                 for image_id in self.uploaded_image_ids:

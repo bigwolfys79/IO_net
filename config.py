@@ -88,7 +88,7 @@ HIGHLIGHT_RULES = {
 
 # Логирование программы (OFF отключает логирование)
 LOGGING = {
-    "level": "OFF",
+    "level": "INFO",
     "format": "%(asctime)s - %(levelname)s - %(message)s",
     "filename": "app.log",
     "encoding": "utf-8",
@@ -97,7 +97,7 @@ LOGGING = {
 
 # Логирование сервера (OFF отключает логирование)
 SERVER_LOGGING = {
-    "level": "OFF",
+    "level": "INFO",
     "format": "%(asctime)s - %(levelname)s - %(message)s",
     "filename": "server.log",
     "encoding": "utf-8",

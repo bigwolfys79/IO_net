@@ -8,7 +8,7 @@ class WorkerSignals(QObject):
     update_status = pyqtSignal(str)
     error = pyqtSignal(str)
     finished = pyqtSignal(object)
-    clear_prompt = pyqtSignal()
+    # clear_prompt = pyqtSignal()
 
 class Worker(QThread):
     """Класс для выполнения задач в фоновом потоке."""
