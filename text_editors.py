@@ -4,14 +4,11 @@ from PyQt6.QtGui import QTextCharFormat, QSyntaxHighlighter, QFont
 import re
 from config import COLORS, HIGHLIGHT_RULES, LOGGING
 import logging
-logging.basicConfig(
-    level=getattr(logging, LOGGING["level"]),
-    format=LOGGING["format"],
-    handlers=[
-        logging.FileHandler(LOGGING["filename"], encoding=LOGGING["encoding"]),
-        logging.StreamHandler()
-    ]
-)
+from logging_config import configure_logging
+configure_logging()
+
+# Логгер уже настроен в logging_config.py
+logger = logging.getLogger('app')
 
 class NonScrollableTextEdit(QTextEdit):
     """Класс текстового редактора без прокрутки, если скроллбар не виден."""
@@ -68,13 +65,13 @@ class EnterKeyTextEdit(QTextEdit):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             text = self.toPlainText()
-            logging.debug(f"Введенный текст: '{text}' (после strip: '{text.strip()}')")
+            logger.debug(f"Введенный текст: '{text}' (после strip: '{text.strip()}')")
             if text:  # Проверяем наличие любого текста
                 if hasattr(self.parent, 'send_request'):
-                    logging.debug("Вызов send_request")
+                    logger.debug("Вызов send_request")
                     self.parent.send_request()
             else:
-                logging.debug("Текст пустой, send_request не вызывается")
+                logger.debug("Текст пустой, send_request не вызывается")
                 self.setStyleSheet(f"background-color: {COLORS['widget_background']}; border: 2px solid {COLORS['error']}; color: {COLORS['text']};")
                 QTimer.singleShot(1000, lambda: self.setStyleSheet(f"background-color: {COLORS['widget_background']}; border: 1px solid {COLORS['border']}; color: {COLORS['text']};"))
             event.accept()

@@ -22,7 +22,8 @@ from urllib.parse import urlparse
 import logging
 from cryptography.fernet import Fernet
 from local_server_handler import LocalServerHandler
-from config import (API_SETTINGS_FILE, THEME_SETTINGS_FILE, THEMES, LOGGING, SERVER_LOGGING, 
+from config import (
+    API_SETTINGS_FILE, THEME_SETTINGS_FILE, THEMES, LOGGING, SERVER_LOGGING, 
     BASE_URL, API_REQUEST_TIMEOUT, TEMPERATURE, MAX_COMPLETION_TOKENS, SEED, SYSTEM_PROMPT,
     CHAT_HISTORY_FILE, API_LOGS_DIR, MAX_FILE_SIZE, MIN_IMAGE_RESOLUTION, SUPPORTED_IMAGE_FORMATS, SUPPORTED_FILE_FORMATS, MAX_IMAGE_RESOLUTION,
     VISION_MODELS, COLORS, CHAT_HISTORY_MAXLEN, DATE_FORMAT, EXPORT_TIMESTAMP_FORMAT
@@ -119,12 +120,10 @@ class Application(QMainWindow):
             if self.server_process and self.server_process.poll() is None:
                 self.server_process.terminate()
                 self.server_process.wait(timeout=5)
-                if LOGGING["level"] != "OFF":
-                    server_logger.info("Локальный сервер остановлен для перезапуска")
+                server_logger.info("Локальный сервер остановлен для перезапуска")
             self.start_local_server()
         except Exception as e:
-            if LOGGING["level"] != "OFF":
-                server_logger.error(f"Ошибка перезапуска сервера: {str(e)}")
+            server_logger.error(f"Ошибка перезапуска сервера: {str(e)}")
             self.status_label.setText("Ошибка перезапуска сервера")
 
     def closeEvent(self, event):
@@ -238,12 +237,12 @@ class Application(QMainWindow):
         QTimer.singleShot(0, self.process_pending_messages)
 
     def process_pending_messages(self):
-        logging.debug(f"Обработка {len(self.pending_messages)} отложенных сообщений")
+        app_logger.debug(f"Обработка {len(self.pending_messages)} отложенных сообщений")
         for content, is_user, timestamp, image_path, image_url in self.pending_messages:
-            logging.debug(f"Добавление отложенного сообщения: '{content}'")
+            app_logger.debug(f"Добавление отложенного сообщения: '{content}'")
             self.add_message_to_chat(content, is_user, timestamp, image_path, image_url)
         self.pending_messages.clear()
-        logging.debug("pending_messages очищен")
+        app_logger.debug("pending_messages очищен")
         if self.chat_history:
             self.status_label.setText(f"Загружено {len(self.chat_history)} сообщений")
 
@@ -259,8 +258,6 @@ class Application(QMainWindow):
         self.signals.add_message.connect(self.add_message_to_chat)
         self.signals.update_status.connect(self.status_label.setText)
         self.signals.error.connect(self.handle_error_signal)
-        # self.signals.clear_prompt.connect(self.prompt_text.clear)
-        # self.signals.clear_prompt.connect(lambda: logging.debug("Очистка prompt_text") or self.prompt_text.clear())
 
     def handle_error_signal(self, error_msg):
         """Обрабатывает сигнал ошибки."""
@@ -333,7 +330,7 @@ class Application(QMainWindow):
             return
         worker = Worker(_process_images_task, filepaths)
         worker.signals.finished.connect(self._on_images_processed)
-        worker.signals.error.connect(self.signals.error.emit)
+        worker.signals.error.connect(self.signals.error)
         worker.signals.finished.connect(lambda _: self.cleanup_worker(worker))
         self.workers.append(worker)
         worker.start()
@@ -391,7 +388,7 @@ class Application(QMainWindow):
 
     def add_message_to_chat(self, message, is_user=True, timestamp=None, image_path=None, image_url=None):
         """Добавляет сообщение в чат."""
-        logging.debug(f"Добавление сообщения в чат: '{message}'")
+        app_logger.debug(f"Добавление сообщения в чат: '{message}'")
         msg = ChatMessage(
             self.messages_widget,
             message,
@@ -580,7 +577,7 @@ class Application(QMainWindow):
 
         worker = Worker(self._send_request_task)
         worker.signals.finished.connect(self._update_ui_after_response)
-        worker.signals.error.connect(self.signals.error.emit)
+        worker.signals.error.connect(self.signals.error)
         worker.signals.finished.connect(lambda result: self.cleanup_worker(worker))
         self.workers.append(worker)
         worker.start()
@@ -593,18 +590,18 @@ class Application(QMainWindow):
         model_type = self._get_model_type(model_id)
         if model_type == "embedding":
             prompt = self.prompt_text.toPlainText()
-            logging.debug(f"Текст для эмбеддинга перед strip: '{prompt}'")
+            app_logger.debug(f"Текст для эмбеддинга перед strip: '{prompt}'")
             if not prompt.strip():
                 raise ValueError("Введите текст для эмбеддинга")
             # Очищаем поле ввода после извлечения текста
             QTimer.singleShot(0, self.prompt_text.clear)
             return self._handle_embedding_task(model_id, prompt)
         prompt = self.prompt_text.toPlainText()
-        logging.debug(f"Текст запроса перед обработкой: '{prompt}'")
+        app_logger.debug(f"Текст запроса перед обработкой: '{prompt}'")
         # Очищаем поле ввода после извлечения текста
         QTimer.singleShot(0, self.prompt_text.clear)
         prompt = prompt.rstrip()  # Удаляем только конечные пробелы и переносы
-        logging.debug(f"Текст запроса после обработки: '{prompt}'")
+        app_logger.debug(f"Текст запроса после обработки: '{prompt}'")
         image_url = self.image_url_edit.text().strip()
         has_image = False
         image_paths = self.image_path if isinstance(self.image_path, list) else [self.image_path] if self.image_path else []
@@ -625,7 +622,7 @@ class Application(QMainWindow):
             for img_b64 in image_base64s:
                 image_urls.append(f"data:image/jpeg;base64,{img_b64}")
                 has_image = True
-                logging.debug(f"Добавлено изображение в формате base64")
+                app_logger.debug(f"Добавлено изображение в формате base64")
         if len(image_urls) > 10:
             raise ValueError("Максимум 10 изображений за запрос")
         file_content = self.read_file()
@@ -651,7 +648,7 @@ class Application(QMainWindow):
             message_content += f"\n``` {file_type}\n{file_content}\n```"
             content[0]["text"] += f"\n\nСодержимое файла ({file_type}):\n```\n{file_content}\n```"
         
-        logging.debug(f"Добавлено в pending_messages: '{message_content}'")
+        app_logger.debug(f"Добавлено в pending_messages: '{message_content}'")
         self.pending_messages.append((message_content, True, timestamp, image_paths[0] if image_paths else None, image_url or None))
         QTimer.singleShot(0, self.process_pending_messages)
 
