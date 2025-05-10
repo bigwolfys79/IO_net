@@ -26,7 +26,7 @@ from config import (
     API_SETTINGS_FILE, THEME_SETTINGS_FILE, THEMES, LOGGING, SERVER_LOGGING, 
     BASE_URL, API_REQUEST_TIMEOUT, TEMPERATURE, MAX_COMPLETION_TOKENS, SEED, SYSTEM_PROMPT,
     CHAT_HISTORY_FILE, API_LOGS_DIR, MAX_FILE_SIZE, MIN_IMAGE_RESOLUTION, SUPPORTED_IMAGE_FORMATS, SUPPORTED_FILE_FORMATS, MAX_IMAGE_RESOLUTION,
-    VISION_MODELS, COLORS, CHAT_HISTORY_MAXLEN, DATE_FORMAT, EXPORT_TIMESTAMP_FORMAT
+    VISION_MODELS, COLORS, CHAT_HISTORY_MAXLEN, DATE_FORMAT, EXPORT_TIMESTAMP_FORMAT, MESSAGES_PER_PAGE
 )
 from encrypt import save_api_key, load_api_key
 from text_editors import NonScrollableTextEdit, EnterKeyTextEdit, SyntaxHighlighter
@@ -383,6 +383,8 @@ class Application(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         self.chat_history.clear()
+        self.current_page = 0
+        self.load_more_button.setVisible(False)
         self.status_label.setText("Чат очищен")
         self.save_chat_history()
 
@@ -402,8 +404,46 @@ class Application(QMainWindow):
         QTimer.singleShot(0, lambda: self.chat_area.verticalScrollBar().setValue(
             self.chat_area.verticalScrollBar().maximum()))
 
+    # def load_chat_history(self):
+    #     """Загружает историю чата из файла."""
+    #     try:
+    #         if not CHAT_HISTORY_FILE:
+    #             app_logger.warning("Не указан файл для загрузки истории чата")
+    #             return
+    #         history_file = os.path.abspath(CHAT_HISTORY_FILE)
+    #         if not os.path.exists(history_file):
+    #             app_logger.info(f"Файл истории чата не найден: {history_file}")
+    #             return
+    #         with open(history_file, "r", encoding="utf-8") as f:
+    #             history = json.load(f)
+    #         self.chat_history.clear()
+    #         while self.messages_layout.count():
+    #             item = self.messages_layout.takeAt(0)
+    #             if item.widget():
+    #                 item.widget().deleteLater()
+    #         for msg in history:
+    #             try:
+    #                 if "timestamp" in msg and isinstance(msg["timestamp"], str):
+    #                     try:
+    #                         msg["timestamp"] = datetime.strptime(msg["timestamp"], DATE_FORMAT)
+    #                     except ValueError:
+    #                         msg["timestamp"] = datetime.now()
+    #                 self.chat_history.append(msg)
+    #                 is_user = msg.get("role") == "user"
+    #                 timestamp = msg.get("timestamp")
+    #                 content = msg.get("content", "")
+    #                 image_path = msg.get("image") if isinstance(msg.get("image"), str) and os.path.exists(msg.get("image")) else None
+    #                 image_url = msg.get("image") if not image_path and isinstance(msg.get("image"), str) and msg.get("image", "").startswith("http") else None
+    #                 self.pending_messages.append((content, is_user, timestamp, image_path, image_url))
+    #             except Exception as e:
+    #                 app_logger.error(f"Ошибка загрузки сообщения: {str(e)}")
+    #                 continue
+    #     except json.JSONDecodeError as e:
+    #         app_logger.error(f"Ошибка декодирования JSON в файле истории: {str(e)}")
+    #     except Exception as e:
+    #         app_logger.error(f"Ошибка загрузки истории чата: {str(e)}")
     def load_chat_history(self):
-        """Загружает историю чата из файла."""
+        """Загружает историю чата из файла постранично."""
         try:
             if not CHAT_HISTORY_FILE:
                 app_logger.warning("Не указан файл для загрузки истории чата")
@@ -415,11 +455,15 @@ class Application(QMainWindow):
             with open(history_file, "r", encoding="utf-8") as f:
                 history = json.load(f)
             self.chat_history.clear()
-            while self.messages_layout.count():
-                item = self.messages_layout.takeAt(0)
+            self.current_page = 0
+            self.pending_messages.clear()
+            while self.messages_layout.count() > 1:  # Оставляем кнопку "Загрузить еще"
+                item = self.messages_layout.takeAt(1)
                 if item.widget():
                     item.widget().deleteLater()
-            for msg in history:
+            # Загружаем только последнюю страницу сообщений
+            start_idx = max(0, len(history) - MESSAGES_PER_PAGE)
+            for msg in history[start_idx:]:
                 try:
                     if "timestamp" in msg and isinstance(msg["timestamp"], str):
                         try:
@@ -436,10 +480,91 @@ class Application(QMainWindow):
                 except Exception as e:
                     app_logger.error(f"Ошибка загрузки сообщения: {str(e)}")
                     continue
+            QTimer.singleShot(0, self.process_pending_messages)
+            # Показываем кнопку "Загрузить еще", если есть еще сообщения
+            if len(history) > MESSAGES_PER_PAGE:
+                self.load_more_button.setVisible(True)
         except json.JSONDecodeError as e:
             app_logger.error(f"Ошибка декодирования JSON в файле истории: {str(e)}")
         except Exception as e:
             app_logger.error(f"Ошибка загрузки истории чата: {str(e)}")
+
+    def load_more_messages(self):
+        """Загружает предыдущую страницу сообщений без смещения скроллбара вверх."""
+        try:
+            history_file = os.path.abspath(CHAT_HISTORY_FILE)
+            if not os.path.exists(history_file):
+                app_logger.info(f"Файл истории чата не найден: {history_file}")
+                return
+            with open(history_file, "r", encoding="utf-8") as f:
+                history = json.load(f)
+            
+            # Сохраняем текущую позицию скроллбара
+            scroll_bar = self.chat_area.verticalScrollBar()
+            current_scroll_position = scroll_bar.value()
+            scroll_max_before = scroll_bar.maximum()
+
+            self.current_page += 1
+            start_idx = max(0, len(history) - MESSAGES_PER_PAGE * (self.current_page + 1))
+            end_idx = max(0, len(history) - MESSAGES_PER_PAGE * self.current_page)
+            if start_idx >= end_idx:
+                self.load_more_button.setVisible(False)
+                return
+            self.pending_messages.clear()
+            for msg in history[start_idx:end_idx]:
+                try:
+                    if "timestamp" in msg and isinstance(msg["timestamp"], str):
+                        try:
+                            msg["timestamp"] = datetime.strptime(msg["timestamp"], DATE_FORMAT)
+                        except ValueError:
+                            msg["timestamp"] = datetime.now()
+                    is_user = msg.get("role") == "user"
+                    timestamp = msg.get("timestamp")
+                    content = msg.get("content", "")
+                    image_path = msg.get("image") if isinstance(msg.get("image"), str) and os.path.exists(msg.get("image")) else None
+                    image_url = msg.get("image") if not image_path and isinstance(msg.get("image"), str) and msg.get("image", "").startswith("http") else None
+                    self.pending_messages.append((content, is_user, timestamp, image_path, image_url))
+                except Exception as e:
+                    app_logger.error(f"Ошибка загрузки сообщения: {str(e)}")
+                    continue
+
+            # Подсчитываем высоту добавляемых сообщений
+            new_messages = []
+            for content, is_user, timestamp, image_path, image_url in reversed(self.pending_messages):
+                msg = ChatMessage(
+                    self.messages_widget,
+                    content,
+                    is_user,
+                    timestamp,
+                    image_path,
+                    image_url,
+                    self
+                )
+                new_messages.append(msg)
+                self.messages_layout.insertWidget(1, msg)  # Вставляем после кнопки "Загрузить еще"
+
+            self.pending_messages.clear()
+
+            # Корректируем позицию скроллбара
+            QTimer.singleShot(0, lambda: self.adjust_scroll_position(scroll_bar, current_scroll_position, new_messages))
+
+            # Если больше нечего загружать, скрываем кнопку
+            if start_idx == 0:
+                self.load_more_button.setVisible(False)
+            self.status_label.setText(f"Загружено {min(MESSAGES_PER_PAGE * (self.current_page + 1), len(history))} сообщений")
+        except json.JSONDecodeError as e:
+            app_logger.error(f"Ошибка декодирования JSON: {str(e)}")
+        except Exception as e:
+            app_logger.error(f"Ошибка загрузки сообщений: {str(e)}")        
+
+    def adjust_scroll_position(self, scroll_bar, original_position, new_messages):
+        """Корректирует позицию скроллбара после добавления новых сообщений."""
+        # Суммируем высоту новых сообщений
+        added_height = sum(msg.sizeHint().height() for msg in new_messages if msg)
+        
+        # Новая позиция скроллбара: старая позиция + высота добавленных сообщений
+        new_position = original_position + added_height
+        scroll_bar.setValue(new_position)
 
     def save_chat_history(self):
         """Сохраняет историю чата в файл."""
@@ -466,11 +591,13 @@ class Application(QMainWindow):
             with open(filepath, "r", encoding="utf-8") as f:
                 history = json.load(f)
             self.chat_history.clear()
-            while self.messages_layout.count():
-                item = self.messages_layout.takeAt(0)
+            self.current_page = 0
+            while self.messages_layout.count() > 1:  # Оставляем кнопку "Загрузить еще"
+                item = self.messages_layout.takeAt(1)
                 if item.widget():
                     item.widget().deleteLater()
-            for msg in history:
+            start_idx = max(0, len(history) - MESSAGES_PER_PAGE)
+            for msg in history[start_idx:]:
                 if "timestamp" in msg:
                     try:
                         msg["timestamp"] = datetime.fromisoformat(msg["timestamp"])
@@ -483,6 +610,8 @@ class Application(QMainWindow):
                 image_url = msg.get("image") if not image_path and msg.get("image", "").startswith("http") else None
                 self.pending_messages.append((msg["content"], is_user, timestamp, image_path, image_url))
             QTimer.singleShot(0, self.process_pending_messages)
+            if len(history) > MESSAGES_PER_PAGE:
+                self.load_more_button.setVisible(True)
             self.status_label.setText(f"Чат загружен из {os.path.basename(filepath)}")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить чат: {str(e)}")

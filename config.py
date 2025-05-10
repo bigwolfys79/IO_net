@@ -64,6 +64,7 @@ THEMES = {
 # Настройки интерфейса
 COLORS = THEMES["dark"]
 CHAT_HISTORY_MAXLEN = 20
+MESSAGES_PER_PAGE = 3  # Количество сообщений на одной странице
 MESSAGE_HEIGHT_RULES = {
     1: 1.5,
     2: 2.5,

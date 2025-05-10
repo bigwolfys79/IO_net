@@ -205,13 +205,14 @@ class ChatMessage(QWidget):
         if self.expanded:
             doc_height = self.message_text.document().size().height()
             self.message_text.setFixedHeight(min(int(doc_height), 1000))
-            self.message_text.setVerticalScrollBarPolicy(Qt.Scroll.ScrollBarAsNeeded)
+            self.message_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)  # Исправлено
         else:
             font_metrics = QFontMetrics(self.message_text.font())
             line_height = font_metrics.lineSpacing()
             margins = self.message_text.contentsMargins()
             collapsed_height = int(line_height * (COLLAPSED_MESSAGE_LINES + 0.5) + margins.top() + margins.bottom())
             self.message_text.setFixedHeight(collapsed_height)
+            self.message_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)  # Исправлено
         self.message_text.updateGeometry()
         self.updateGeometry()
         self.parent().updateGeometry()

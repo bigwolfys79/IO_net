@@ -61,6 +61,12 @@ def setup_ui(app):
     app.messages_widget.setStyleSheet(f"background-color: {COLORS['background']};")
     app.messages_layout = QVBoxLayout(app.messages_widget)
     app.messages_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+    # Добавляем кнопку "Загрузить еще" в messages_layout
+    app.load_more_button = QPushButton("Загрузить еще")
+    app.load_more_button.setStyleSheet(f"background-color: {COLORS['widget_background']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']};")
+    app.load_more_button.clicked.connect(app.load_more_messages)
+    app.load_more_button.setVisible(False)
+    app.messages_layout.addWidget(app.load_more_button, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)  # Явно добавляем в messages_layout
     app.chat_area.setWidget(app.messages_widget)
     app.chat_area.setStyleSheet(f"""
         QScrollArea {{
