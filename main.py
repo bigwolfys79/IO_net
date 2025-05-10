@@ -378,13 +378,16 @@ class Application(QMainWindow):
 
     def clear_chat(self):
         """Очищает чат и историю сообщений."""
-        while self.messages_layout.count():
-            item = self.messages_layout.takeAt(0)
+        # Сохраняем ссылку на кнопку, чтобы не удалять её
+        load_more_button = self.load_more_button
+        # Удаляем все элементы, кроме кнопки "Загрузить еще"
+        while self.messages_layout.count() > 1:  # Оставляем кнопку (индекс 0)
+            item = self.messages_layout.takeAt(1)
             if item.widget():
                 item.widget().deleteLater()
         self.chat_history.clear()
         self.current_page = 0
-        self.load_more_button.setVisible(False)
+        load_more_button.setVisible(False)  # Устанавливаем видимость после очистки
         self.status_label.setText("Чат очищен")
         self.save_chat_history()
 
@@ -403,45 +406,7 @@ class Application(QMainWindow):
         self.messages_layout.addWidget(msg)
         QTimer.singleShot(0, lambda: self.chat_area.verticalScrollBar().setValue(
             self.chat_area.verticalScrollBar().maximum()))
-
-    # def load_chat_history(self):
-    #     """Загружает историю чата из файла."""
-    #     try:
-    #         if not CHAT_HISTORY_FILE:
-    #             app_logger.warning("Не указан файл для загрузки истории чата")
-    #             return
-    #         history_file = os.path.abspath(CHAT_HISTORY_FILE)
-    #         if not os.path.exists(history_file):
-    #             app_logger.info(f"Файл истории чата не найден: {history_file}")
-    #             return
-    #         with open(history_file, "r", encoding="utf-8") as f:
-    #             history = json.load(f)
-    #         self.chat_history.clear()
-    #         while self.messages_layout.count():
-    #             item = self.messages_layout.takeAt(0)
-    #             if item.widget():
-    #                 item.widget().deleteLater()
-    #         for msg in history:
-    #             try:
-    #                 if "timestamp" in msg and isinstance(msg["timestamp"], str):
-    #                     try:
-    #                         msg["timestamp"] = datetime.strptime(msg["timestamp"], DATE_FORMAT)
-    #                     except ValueError:
-    #                         msg["timestamp"] = datetime.now()
-    #                 self.chat_history.append(msg)
-    #                 is_user = msg.get("role") == "user"
-    #                 timestamp = msg.get("timestamp")
-    #                 content = msg.get("content", "")
-    #                 image_path = msg.get("image") if isinstance(msg.get("image"), str) and os.path.exists(msg.get("image")) else None
-    #                 image_url = msg.get("image") if not image_path and isinstance(msg.get("image"), str) and msg.get("image", "").startswith("http") else None
-    #                 self.pending_messages.append((content, is_user, timestamp, image_path, image_url))
-    #             except Exception as e:
-    #                 app_logger.error(f"Ошибка загрузки сообщения: {str(e)}")
-    #                 continue
-    #     except json.JSONDecodeError as e:
-    #         app_logger.error(f"Ошибка декодирования JSON в файле истории: {str(e)}")
-    #     except Exception as e:
-    #         app_logger.error(f"Ошибка загрузки истории чата: {str(e)}")
+    
     def load_chat_history(self):
         """Загружает историю чата из файла постранично."""
         try:
@@ -575,9 +540,38 @@ class Application(QMainWindow):
         worker.start()
 
     def save_chat(self):
-        """Сохраняет чат в файл."""
-        self.save_chat_history()
-        self.status_label.setText("Чат сохранен")
+        """Сохраняет полный чат в файл через диалог выбора пути."""
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить чат",
+            "", "JSON файлы (*.json);;Все файлы (*.*)"
+        )
+        if not filepath:
+            return
+        try:
+            # Загружаем полную историю чата из файла, если он существует
+            full_history = []
+            history_file = os.path.abspath(CHAT_HISTORY_FILE)
+            if os.path.exists(history_file):
+                with open(history_file, "r", encoding="utf-8") as f:
+                    full_history = json.load(f)
+            else:
+                # Если файла истории нет, используем текущую историю
+                full_history = list(self.chat_history)
+
+            # Форматируем временные метки для сохранения
+            for msg in full_history:
+                if "timestamp" in msg and not isinstance(msg["timestamp"], str):
+                    msg["timestamp"] = msg["timestamp"].strftime(DATE_FORMAT)
+
+            # Сохраняем полный чат в выбранный файл
+            os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(full_history, f, ensure_ascii=False, indent=2)
+            self.status_label.setText(f"Полный чат сохранен в {os.path.basename(filepath)}")
+            app_logger.info(f"Полный чат сохранен в {filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить чат: {str(e)}")
+            app_logger.error(f"Ошибка сохранения чата: {str(e)}")
 
     def load_chat_from_file(self):
         """Загружает чат из выбранного файла."""
